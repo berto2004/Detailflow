@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+
+  "name": "detailflow",
+
+  "main": ".open-next/worker.js",
+
+  "compatibility_date": "2026-08-21",
+
+  "compatibility_flags": ["nodejs_compat"],
+
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "detailflow-db",
+      "database_id": "ccbc5f9e-0391-4371-963f-4004440789d9",
+      "migrations_dir": "drizzle"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}
