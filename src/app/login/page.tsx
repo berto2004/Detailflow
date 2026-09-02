@@ -2,9 +2,12 @@
 
 import { FormEvent, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [mode, setMode] = useState<"login" | "register">("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -35,7 +38,7 @@ export default function LoginPage() {
           return;
         }
 
-        window.location.href = "/onboarding";
+        router.push("/onboarding");
         return;
       }
 
@@ -45,14 +48,18 @@ export default function LoginPage() {
       });
 
       if (result.error) {
-        setError(result.error.message || "Username atau password salah.");
+        setError(
+          result.error.message || "Username atau password salah.",
+        );
         return;
       }
 
-      window.location.href = "/dashboard";
+      router.push("/dashboard");
     } catch (err) {
       console.error("AUTH ERROR:", err);
-      setError("Terjadi kesalahan saat login. Silakan coba lagi.");
+      setError(
+        "Terjadi kesalahan saat login. Silakan coba lagi.",
+      );
     } finally {
       setLoading(false);
     }
@@ -80,8 +87,8 @@ export default function LoginPage() {
           </h1>
 
           <p className="mt-5 text-lg leading-relaxed text-gray-400">
-            Customer, kendaraan, booking, work order, dokumentasi, dan
-            pembayaran.
+            Customer, kendaraan, booking, work order,
+            dokumentasi, dan pembayaran.
           </p>
         </div>
 
@@ -130,7 +137,11 @@ export default function LoginPage() {
               )}
 
               <Field
-                label={mode === "login" ? "Username / Email" : "Email"}
+                label={
+                  mode === "login"
+                    ? "Username / Email"
+                    : "Email"
+                }
                 name="email"
                 type="email"
                 autoComplete="email"
@@ -247,8 +258,14 @@ function PasswordField({
 
         <button
           type="button"
-          onClick={() => setShowPassword((current) => !current)}
-          aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+          onClick={() =>
+            setShowPassword((current) => !current)
+          }
+          aria-label={
+            showPassword
+              ? "Sembunyikan password"
+              : "Tampilkan password"
+          }
           className="absolute inset-y-0 right-0 flex w-12 items-center justify-center text-gray-400 transition hover:text-gray-900"
         >
           {showPassword ? (

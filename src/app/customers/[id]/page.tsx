@@ -13,7 +13,6 @@ import {
   Phone,
   Plus,
   ReceiptText,
-  UserRound,
   Wrench,
 } from "lucide-react";
 
@@ -32,7 +31,7 @@ import { formatRupiah } from "@/lib/utils";
 
 const bookingStatusLabel: Record<string, string> = {
   booked: "Booked",
-  checked_in: "Checked-in",
+  "checked_in": "Checked-in",
   cancelled: "Cancelled",
   no_show: "No Show",
 };

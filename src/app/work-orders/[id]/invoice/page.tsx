@@ -371,8 +371,8 @@ export default async function InvoicePrintPage({
           </p>
 
           {workOrder.invoiceFooterNote && (
-            <p className="mt-1 text-xs italic text-gray-500 print:text-[8px]">
-              "{workOrder.invoiceFooterNote}"
+            <p className="mt-0.5 text-xs italic text-gray-500 print:text-[8px]">
+              &quot;{workOrder.invoiceFooterNote}&quot;
             </p>
           )}
 

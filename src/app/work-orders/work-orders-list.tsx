@@ -23,16 +23,6 @@ const statusLabel: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
-const statusOptions = [
-  "all",
-  "inspection",
-  "in_progress",
-  "qc",
-  "ready",
-  "completed",
-  "cancelled",
-] as const;
-
 type Status =
   | "inspection"
   | "in_progress"
@@ -40,6 +30,8 @@ type Status =
   | "ready"
   | "completed"
   | "cancelled";
+
+type StatusFilter = "all" | Status;
 
 type Row = {
   id: string;
@@ -61,13 +53,9 @@ export default function WorkOrdersList({
   rows: Row[];
   isTechnician: boolean;
 }) {
-  const [search, setSearch] =
-    useState("");
-
+  const [search, setSearch] = useState("");
   const [status, setStatus] =
-    useState<
-      (typeof statusOptions)[number]
-    >("all");
+    useState<StatusFilter>("all");
 
   const filteredRows = useMemo(() => {
     const keyword =
@@ -98,9 +86,7 @@ export default function WorkOrdersList({
         .join(" ")
         .toLowerCase();
 
-      return haystack.includes(
-        keyword,
-      );
+      return haystack.includes(keyword);
     });
   }, [rows, search, status]);
 
@@ -135,9 +121,7 @@ export default function WorkOrdersList({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gray-900 text-white">
-            <ClipboardList
-              size={22}
-            />
+            <ClipboardList size={22} />
           </div>
 
           <div>
@@ -172,9 +156,7 @@ export default function WorkOrdersList({
 
         <SummaryCard
           label="Completed"
-          value={String(
-            completedCount,
-          )}
+          value={String(completedCount)}
         />
       </div>
 
@@ -203,9 +185,7 @@ export default function WorkOrdersList({
             {search && (
               <button
                 type="button"
-                onClick={() =>
-                  setSearch("")
-                }
+                onClick={() => setSearch("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition hover:text-gray-900"
                 aria-label="Hapus pencarian"
               >
@@ -226,7 +206,7 @@ export default function WorkOrdersList({
               onChange={(event) =>
                 setStatus(
                   event.target
-                    .value as (typeof statusOptions)[number],
+                    .value as StatusFilter,
                 )
               }
               className="h-11 w-full min-w-[190px] appearance-none rounded-xl border border-gray-300 bg-white pl-10 pr-9 text-sm font-medium text-gray-700 outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
@@ -374,8 +354,7 @@ export default function WorkOrdersList({
                           </p>
 
                           <p className="mt-0.5 truncate text-xs text-gray-500">
-                            {row.phone ||
-                              "-"}
+                            {row.phone || "-"}
                           </p>
                         </div>
                       </div>
@@ -446,17 +425,12 @@ export default function WorkOrdersList({
   );
 }
 
-function formatDate(
-  date: Date,
-) {
-  return new Intl.DateTimeFormat(
-    "id-ID",
-    {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: "Asia/Jakarta",
-    },
-  ).format(date);
+function formatDate(date: Date) {
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(date);
 }
 
 function StatusBadge({
@@ -464,10 +438,7 @@ function StatusBadge({
 }: {
   status: Status;
 }) {
-  const styles: Record<
-    Status,
-    string
-  > = {
+  const styles: Record<Status, string> = {
     inspection:
       "bg-amber-50 text-amber-700",
     in_progress:
@@ -485,13 +456,11 @@ function StatusBadge({
     <span
       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${styles[status]}`}
     >
-      {status ===
-        "completed" && (
+      {status === "completed" && (
         <BadgeCheck size={14} />
       )}
 
-      {statusLabel[status] ??
-        status}
+      {statusLabel[status] ?? status}
     </span>
   );
 }
@@ -551,17 +520,16 @@ function EmptyState({
         {description}
       </p>
 
-      {filtered &&
-        onReset && (
-          <button
-            type="button"
-            onClick={onReset}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
-          >
-            <Check size={16} />
-            Reset Filter
-          </button>
-        )}
+      {filtered && onReset && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
+        >
+          <Check size={16} />
+          Reset Filter
+        </button>
+      )}
     </div>
   );
 }

@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { Printer, Receipt, FileText } from "lucide-react";
+import { Receipt, FileText } from "lucide-react";
 
 export function PrintButton() {
-  const [mode, setMode] = useState<"a4" | "thermal">("a4");
+  const handlePrint = (
+    selectedMode: "a4" | "thermal",
+  ) => {
+    document.documentElement.setAttribute(
+      "data-print-mode",
+      selectedMode,
+    );
 
-  const handlePrint = (selectedMode: "a4" | "thermal") => {
-    setMode(selectedMode);
-    document.documentElement.setAttribute("data-print-mode", selectedMode);
     setTimeout(() => {
       window.print();
     }, 50);
@@ -19,17 +21,24 @@ export function PrintButton() {
       {/* Tombol Cetak Struk Thermal */}
       <button
         type="button"
-        onClick={() => handlePrint("thermal")}
+        onClick={() =>
+          handlePrint("thermal")
+        }
         className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 active:scale-95"
       >
-        <Receipt size={15} className="text-gray-500" />
+        <Receipt
+          size={15}
+          className="text-gray-500"
+        />
         Struk Thermal (58/80mm)
       </button>
 
       {/* Tombol Cetak Invoice A4 */}
       <button
         type="button"
-        onClick={() => handlePrint("a4")}
+        onClick={() =>
+          handlePrint("a4")
+        }
         className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-gray-800 active:scale-95"
       >
         <FileText size={15} />
