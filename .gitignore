@@ -136,3 +136,5 @@ dist
 .pnp.*
 # OpenNext build output
 .open-next/
+# Cloudflare Wrangler local state
+.wrangler/

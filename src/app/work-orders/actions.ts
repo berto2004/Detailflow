@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -14,6 +14,7 @@ import {
   workOrders,
 } from "@/db/schema";
 import { createId } from "@/lib/ids";
+import { checkLimit } from "@/lib/entitlement";
 import { requireRole } from "@/lib/permissions";
 
 export async function createWorkOrderFromBooking(
@@ -84,9 +85,7 @@ export async function createWorkOrderFromBooking(
     .limit(1);
 
   if (existing) {
-    redirect(
-      `/work-orders/${existing.id}`,
-    );
+    redirect(`/work-orders/${existing.id}`);
   }
 
   let service:
@@ -124,6 +123,30 @@ export async function createWorkOrderFromBooking(
   const workOrderId = createId("wo");
 
   const total = service?.price ?? 0;
+
+  const [usage] = await db
+    .select({
+      count: count(),
+    })
+    .from(workOrders)
+    .where(
+      eq(
+        workOrders.organizationId,
+        workspace.organizationId,
+      ),
+    );
+
+  const canCreate = await checkLimit(
+    workspace.organizationId,
+    "work_orders",
+    usage?.count ?? 0,
+  );
+
+  if (!canCreate) {
+    throw new Error(
+      "Batas Work Order paket Anda sudah tercapai.",
+    );
+  }
 
   await db.insert(workOrders).values({
     id: workOrderId,
