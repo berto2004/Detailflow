@@ -23,10 +23,12 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { getDb } from "@/db";
 import {
+  authUsers,
   customers,
   inspections,
   invoices,
   jobPhotos,
+  members,
   organizations,
   payments,
   vehicles,
@@ -67,12 +69,15 @@ function rupiah(value: number) {
 
 function formatWhatsAppNumber(phone: string) {
   const cleaned = phone.replace(/\D/g, "");
+
   if (cleaned.startsWith("0")) {
     return `62${cleaned.slice(1)}`;
   }
+
   if (cleaned.startsWith("8")) {
     return `62${cleaned}`;
   }
+
   return cleaned;
 }
 
@@ -97,18 +102,24 @@ function generateWhatsAppMessage({
   customMessage?: string | null;
   trackingId: string;
 }) {
-  let statusText = "sedang dalam pengerjaan";
+  let statusText =
+    "sedang dalam pengerjaan";
 
   if (status === "inspection") {
-    statusText = "telah masuk tahap *Inspeksi Awal*. Tim kami sedang memeriksa kondisi kendaraan.";
+    statusText =
+      "telah masuk tahap *Inspeksi Awal*. Tim kami sedang memeriksa kondisi kendaraan.";
   } else if (status === "in_progress") {
-    statusText = "sedang dalam proses *Pengerjaan / Treatment*.";
+    statusText =
+      "sedang dalam proses *Pengerjaan / Treatment*.";
   } else if (status === "qc") {
-    statusText = "telah memasuki tahap akhir (*Quality Control*) untuk pengecekan detail hasil pengerjaan.";
+    statusText =
+      "telah memasuki tahap akhir (*Quality Control*) untuk pengecekan detail hasil pengerjaan.";
   } else if (status === "ready") {
-    statusText = "sudah *SELESAI* dikerjakan dan siap diambil. ✨";
+    statusText =
+      "sudah *SELESAI* dikerjakan dan siap diambil. ✨";
   } else if (status === "completed") {
-    statusText = "telah selesai dan diserahkan. Terima kasih! 🙏";
+    statusText =
+      "telah selesai dan diserahkan. Terima kasih! 🙏";
   }
 
   const closingText =
@@ -142,12 +153,18 @@ export default async function WorkOrderDetailPage({
   const workspace = await requireWorkspace();
   const db = getDb();
 
-  const isTechnician = workspace.role === "technician";
+  const isTechnician =
+    workspace.role === "technician";
+
+  const canAssignTechnician =
+    workspace.role === "owner" ||
+    workspace.role === "admin";
 
   const [row] = await db
     .select({
       assignedMemberId:
-      workOrders.assignedMemberId,
+        workOrders.assignedMemberId,
+
       id: workOrders.id,
       status: workOrders.status,
       subtotal: workOrders.subtotal,
@@ -163,47 +180,154 @@ export default async function WorkOrderDetailPage({
       plate: vehicles.plateNumber,
       color: vehicles.color,
 
-      organizationName: organizations.name,
-      customMessage: organizations.customMessage,
+      organizationName:
+        organizations.name,
+      customMessage:
+        organizations.customMessage,
     })
     .from(workOrders)
     .innerJoin(
       customers,
-      eq(workOrders.customerId, customers.id)
+      eq(
+        workOrders.customerId,
+        customers.id,
+      ),
     )
     .innerJoin(
       vehicles,
-      eq(workOrders.vehicleId, vehicles.id)
+      eq(
+        workOrders.vehicleId,
+        vehicles.id,
+      ),
     )
     .innerJoin(
       organizations,
-      eq(workOrders.organizationId, organizations.id)
+      eq(
+        workOrders.organizationId,
+        organizations.id,
+      ),
     )
     .where(
       and(
         eq(workOrders.id, id),
-        eq(workOrders.organizationId, workspace.organizationId)
-      )
+        eq(
+          workOrders.organizationId,
+          workspace.organizationId,
+        ),
+      ),
     )
     .limit(1);
 
   if (!row) {
     notFound();
   }
-  
+
+  /*
+   * =========================================================
+   * TECHNICIAN LIST
+   * =========================================================
+   *
+   * Hanya owner/admin yang membutuhkan daftar technician.
+   *
+   * Nama technician berasal dari authUsers.name.
+   * Role + active + organization berasal dari members.
+   */
+  const technicians =
+    canAssignTechnician
+      ? await db
+          .select({
+            id: members.id,
+            name: authUsers.name,
+            email: authUsers.email,
+          })
+          .from(members)
+          .innerJoin(
+            authUsers,
+            eq(
+              members.authUserId,
+              authUsers.id,
+            ),
+          )
+          .where(
+            and(
+              eq(
+                members.organizationId,
+                workspace.organizationId,
+              ),
+              eq(
+                members.role,
+                "technician",
+              ),
+              eq(
+                members.active,
+                true,
+              ),
+            ),
+          )
+          .orderBy(authUsers.name)
+      : [];
+
+  /*
+   * =========================================================
+   * ASSIGNED TECHNICIAN
+   * =========================================================
+   *
+   * Ambil nama technician yang saat ini terpasang
+   * pada Work Order.
+   */
+  const [assignedTechnician] =
+    row.assignedMemberId
+      ? await db
+          .select({
+            id: members.id,
+            name: authUsers.name,
+            email: authUsers.email,
+          })
+          .from(members)
+          .innerJoin(
+            authUsers,
+            eq(
+              members.authUserId,
+              authUsers.id,
+            ),
+          )
+          .where(
+            and(
+              eq(
+                members.id,
+                row.assignedMemberId,
+              ),
+              eq(
+                members.organizationId,
+                workspace.organizationId,
+              ),
+            ),
+          )
+          .limit(1)
+      : [undefined];
+
   const items = await db
     .select({
       id: workOrderItems.id,
-      description: workOrderItems.description,
-      quantity: workOrderItems.quantity,
-      lineTotal: workOrderItems.lineTotal,
+      description:
+        workOrderItems.description,
+      quantity:
+        workOrderItems.quantity,
+      lineTotal:
+        workOrderItems.lineTotal,
     })
     .from(workOrderItems)
     .where(
       and(
-        eq(workOrderItems.workOrderId, id),
-        eq(workOrderItems.organizationId, workspace.organizationId)
-      )
+        eq(
+          workOrderItems.workOrderId,
+          id,
+        ),
+        eq(
+          workOrderItems.organizationId,
+          workspace.organizationId,
+        ),
+      ),
     );
 
   const [inspection] = await db
@@ -211,9 +335,15 @@ export default async function WorkOrderDetailPage({
     .from(inspections)
     .where(
       and(
-        eq(inspections.workOrderId, id),
-        eq(inspections.organizationId, workspace.organizationId)
-      )
+        eq(
+          inspections.workOrderId,
+          id,
+        ),
+        eq(
+          inspections.organizationId,
+          workspace.organizationId,
+        ),
+      ),
     )
     .limit(1);
 
@@ -225,9 +355,15 @@ export default async function WorkOrderDetailPage({
     .from(jobPhotos)
     .where(
       and(
-        eq(jobPhotos.workOrderId, id),
-        eq(jobPhotos.organizationId, workspace.organizationId)
-      )
+        eq(
+          jobPhotos.workOrderId,
+          id,
+        ),
+        eq(
+          jobPhotos.organizationId,
+          workspace.organizationId,
+        ),
+      ),
     );
 
   const [invoice] = isTechnician
@@ -237,9 +373,15 @@ export default async function WorkOrderDetailPage({
         .from(invoices)
         .where(
           and(
-            eq(invoices.workOrderId, id),
-            eq(invoices.organizationId, workspace.organizationId)
-          )
+            eq(
+              invoices.workOrderId,
+              id,
+            ),
+            eq(
+              invoices.organizationId,
+              workspace.organizationId,
+            ),
+          ),
         )
         .limit(1);
 
@@ -250,19 +392,31 @@ export default async function WorkOrderDetailPage({
           .from(payments)
           .where(
             and(
-              eq(payments.invoiceId, invoice.id),
-              eq(payments.organizationId, workspace.organizationId)
-            )
+              eq(
+                payments.invoiceId,
+                invoice.id,
+              ),
+              eq(
+                payments.organizationId,
+                workspace.organizationId,
+              ),
+            ),
           )
       : [];
 
   const remainingAmount = invoice
-    ? Math.max(0, invoice.total - invoice.paidAmount)
+    ? Math.max(
+        0,
+        invoice.total -
+          invoice.paidAmount,
+      )
     : 0;
 
-  const currentStatusIndex = statuses.findIndex(
-    ([value]) => value === row.status
-  );
+  const currentStatusIndex =
+    statuses.findIndex(
+      ([value]) =>
+        value === row.status,
+    );
 
   const inspectionCount = [
     inspection?.bodyChecked,
@@ -271,22 +425,41 @@ export default async function WorkOrderDetailPage({
     inspection?.interiorChecked,
   ].filter(Boolean).length;
 
-  const beforePhotos = photos.filter((photo) => photo.type === "before");
-  const afterPhotos = photos.filter((photo) => photo.type === "after");
+  const beforePhotos =
+    photos.filter(
+      (photo) =>
+        photo.type === "before",
+    );
 
-  const waNumber = formatWhatsAppNumber(row.phone);
-  const waEncodedMsg = generateWhatsAppMessage({
-    customer: row.customer,
-    brand: row.brand,
-    model: row.model,
-    plate: row.plate,
-    status: row.status,
-    total: row.total,
-    orgName: row.organizationName,
-    customMessage: row.customMessage,
-    trackingId: row.id,
-  });
-  const waUrl = `https://wa.me/${waNumber}?text=${waEncodedMsg}`;
+  const afterPhotos =
+    photos.filter(
+      (photo) =>
+        photo.type === "after",
+    );
+
+  const waNumber =
+    formatWhatsAppNumber(
+      row.phone,
+    );
+
+  const waEncodedMsg =
+    generateWhatsAppMessage({
+      customer: row.customer,
+      brand: row.brand,
+      model: row.model,
+      plate: row.plate,
+      status: row.status,
+      total: row.total,
+      orgName:
+        row.organizationName,
+      customMessage:
+        row.customMessage,
+      trackingId: row.id,
+    });
+
+  const waUrl =
+    `https://wa.me/${waNumber}` +
+    `?text=${waEncodedMsg}`;
 
   return (
     <AppShell>
@@ -304,16 +477,20 @@ export default async function WorkOrderDetailPage({
           <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gray-900 text-white">
-                <ClipboardCheck size={23} />
+                <ClipboardCheck
+                  size={23}
+                />
               </div>
 
               <div className="min-w-0">
                 <p className="text-xs font-bold uppercase tracking-[0.15em] text-gray-400">
-                  Work Order · {row.organizationName}
+                  Work Order ·{" "}
+                  {row.organizationName}
                 </p>
 
                 <h1 className="mt-1 text-2xl font-black tracking-tight text-gray-900 md:text-3xl">
-                  {row.brand} {row.model}
+                  {row.brand}{" "}
+                  {row.model}
                 </h1>
 
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -322,7 +499,9 @@ export default async function WorkOrderDetailPage({
                   </span>
 
                   <span className="text-xs text-gray-400">
-                    {formatDate(row.createdAt)}
+                    {formatDate(
+                      row.createdAt,
+                    )}
                   </span>
                 </div>
               </div>
@@ -336,12 +515,16 @@ export default async function WorkOrderDetailPage({
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2.5 text-xs font-bold !text-white shadow-sm transition hover:bg-emerald-700 active:scale-95"
                 >
-                  <MessageSquareShare size={16} />
+                  <MessageSquareShare
+                    size={16}
+                  />
                   Kirim Update WA
                 </a>
               )}
 
-              <StatusBadge status={row.status} />
+              <StatusBadge
+                status={row.status}
+              />
             </div>
           </div>
 
@@ -349,6 +532,144 @@ export default async function WorkOrderDetailPage({
             ID: {row.id}
           </p>
         </header>
+
+        {/* ASSIGN TECHNICIAN */}
+        {canAssignTechnician && (
+          <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-600">
+                  <UserRound
+                    size={20}
+                  />
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                    Assignment
+                  </p>
+
+                  <h2 className="mt-1 text-lg font-bold text-gray-900">
+                    Teknisi
+                  </h2>
+
+                  <p className="mt-1 text-sm leading-6 text-gray-500">
+                    Tentukan teknisi yang bertanggung
+                    jawab mengerjakan Work Order ini.
+                  </p>
+                </div>
+              </div>
+
+              {assignedTechnician && (
+                <span className="w-fit rounded-full bg-green-50 px-3 py-1.5 text-xs font-bold text-green-700">
+                  Sudah ditugaskan
+                </span>
+              )}
+            </div>
+
+            <form
+              action={assignWorkOrder}
+              className="mt-5"
+            >
+              <input
+                type="hidden"
+                name="workOrderId"
+                value={row.id}
+              />
+
+              <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                <div className="min-w-0 flex-1">
+                  <label
+                    htmlFor="memberId"
+                    className="mb-1.5 block text-sm font-semibold text-gray-700"
+                  >
+                    Pilih Teknisi
+                  </label>
+
+                  <select
+                    id="memberId"
+                    name="memberId"
+                    defaultValue={
+                      row.assignedMemberId ??
+                      ""
+                    }
+                    className={inputClass}
+                  >
+                    <option value="">
+                      Belum ditugaskan
+                    </option>
+
+                    {technicians.map(
+                      (technician) => (
+                        <option
+                          key={
+                            technician.id
+                          }
+                          value={
+                            technician.id
+                          }
+                        >
+                          {technician.name}
+                          {technician.email
+                            ? ` • ${technician.email}`
+                            : ""}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  className="rounded-xl bg-gray-900 px-5 py-3 font-bold !text-white transition hover:bg-gray-800 active:scale-[0.98]"
+                >
+                  Simpan Penugasan
+                </button>
+              </div>
+
+              {technicians.length ===
+                0 && (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  <p className="font-bold">
+                    Belum ada teknisi aktif.
+                  </p>
+
+                  <p className="mt-1 leading-6">
+                    Tambahkan akun dengan role
+                    technician terlebih dahulu.
+                  </p>
+                </div>
+              )}
+            </form>
+
+            {assignedTechnician && (
+              <div className="mt-4 flex items-center gap-3 rounded-2xl bg-gray-50 p-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-900 text-sm font-black text-white">
+                  {assignedTechnician.name
+                    .trim()
+                    .slice(0, 1)
+                    .toUpperCase()}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    Teknisi saat ini
+                  </p>
+
+                  <p className="mt-0.5 truncate text-sm font-bold text-gray-900">
+                    {assignedTechnician.name}
+                  </p>
+
+                  {assignedTechnician.email && (
+                    <p className="mt-0.5 truncate text-xs text-gray-400">
+                      {assignedTechnician.email}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
         {/* PROGRESS */}
         <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
@@ -359,48 +680,70 @@ export default async function WorkOrderDetailPage({
           />
 
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {statuses.map(([value, label], index) => {
-              const isCurrent = row.status === value;
-              const isPassed = currentStatusIndex > index;
+            {statuses.map(
+              ([value, label], index) => {
+                const isCurrent =
+                  row.status === value;
 
-              return (
-                <form key={value} action={updateWorkOrderStatus}>
-                  <input type="hidden" name="workOrderId" value={row.id} />
-                  <input type="hidden" name="status" value={value} />
+                const isPassed =
+                  currentStatusIndex >
+                  index;
 
-                  <button
-                    type="submit"
-                    className={`flex min-h-20 w-full flex-col items-start justify-between rounded-2xl border p-3 text-left transition ${
-                      isCurrent
-                        ? "border-gray-900 bg-gray-900 !text-white shadow-sm"
-                        : isPassed
-                          ? "border-green-200 bg-green-50 text-green-800"
-                          : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
+                return (
+                  <form
+                    key={value}
+                    action={
+                      updateWorkOrderStatus
+                    }
                   >
-                    <span
-                      className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${
+                    <input
+                      type="hidden"
+                      name="workOrderId"
+                      value={row.id}
+                    />
+
+                    <input
+                      type="hidden"
+                      name="status"
+                      value={value}
+                    />
+
+                    <button
+                      type="submit"
+                      className={`flex min-h-20 w-full flex-col items-start justify-between rounded-2xl border p-3 text-left transition ${
                         isCurrent
-                          ? "bg-white text-gray-900"
+                          ? "border-gray-900 bg-gray-900 !text-white shadow-sm"
                           : isPassed
-                            ? "bg-green-600 text-white"
-                            : "bg-gray-100 text-gray-500"
+                            ? "border-green-200 bg-green-50 text-green-800"
+                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
                       }`}
                     >
-                      {isPassed ? (
-                        <CheckCircle2 size={16} />
-                      ) : (
-                        index + 1
-                      )}
-                    </span>
+                      <span
+                        className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-black ${
+                          isCurrent
+                            ? "bg-white text-gray-900"
+                            : isPassed
+                              ? "bg-green-600 text-white"
+                              : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {isPassed ? (
+                          <CheckCircle2
+                            size={16}
+                          />
+                        ) : (
+                          index + 1
+                        )}
+                      </span>
 
-                    <span className="mt-2 text-xs font-bold sm:text-sm">
-                      {label}
-                    </span>
-                  </button>
-                </form>
-              );
-            })}
+                      <span className="mt-2 text-xs font-bold sm:text-sm">
+                        {label}
+                      </span>
+                    </button>
+                  </form>
+                );
+              },
+            )}
           </div>
         </section>
 
@@ -409,7 +752,9 @@ export default async function WorkOrderDetailPage({
           <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-600">
-                <UserRound size={20} />
+                <UserRound
+                  size={20}
+                />
               </div>
 
               <div>
@@ -417,15 +762,24 @@ export default async function WorkOrderDetailPage({
                   Customer
                 </p>
 
-                <h2 className="font-bold text-gray-900">{row.customer}</h2>
+                <h2 className="font-bold text-gray-900">
+                  {row.customer}
+                </h2>
               </div>
             </div>
 
             <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <Phone size={18} className="shrink-0 text-gray-400" />
+                <Phone
+                  size={18}
+                  className="shrink-0 text-gray-400"
+                />
+
                 <div>
-                  <p className="text-xs text-gray-400">WhatsApp / Telepon</p>
+                  <p className="text-xs text-gray-400">
+                    WhatsApp / Telepon
+                  </p>
+
                   <p className="mt-0.5 text-sm font-bold text-gray-800">
                     {row.phone}
                   </p>
@@ -439,7 +793,9 @@ export default async function WorkOrderDetailPage({
                   rel="noopener noreferrer"
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100"
                 >
-                  <MessageSquareShare size={14} />
+                  <MessageSquareShare
+                    size={14}
+                  />
                   Chat Customer
                 </a>
               )}
@@ -458,14 +814,24 @@ export default async function WorkOrderDetailPage({
                 </p>
 
                 <h2 className="font-bold text-gray-900">
-                  {row.brand} {row.model}
+                  {row.brand}{" "}
+                  {row.model}
                 </h2>
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3">
-              <Info label="Nomor Polisi" value={row.plate} />
-              <Info label="Warna" value={row.color || "-"} />
+              <Info
+                label="Nomor Polisi"
+                value={row.plate}
+              />
+
+              <Info
+                label="Warna"
+                value={
+                  row.color || "-"
+                }
+              />
             </div>
           </div>
         </section>
@@ -480,36 +846,72 @@ export default async function WorkOrderDetailPage({
             />
 
             <span className="w-fit rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold text-gray-600">
-              {inspectionCount}/4 dicek
+              {inspectionCount}/4
+              dicek
             </span>
           </div>
 
-          <form action={saveInspection} className="mt-5 space-y-4">
-            <input type="hidden" name="workOrderId" value={row.id} />
+          <form
+            action={saveInspection}
+            className="mt-5 space-y-4"
+          >
+            <input
+              type="hidden"
+              name="workOrderId"
+              value={row.id}
+            />
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               {[
-                ["bodyChecked", "Body", inspection?.bodyChecked],
-                ["wheelsChecked", "Velg & Ban", inspection?.wheelsChecked],
-                ["glassChecked", "Kaca", inspection?.glassChecked],
-                ["interiorChecked", "Interior", inspection?.interiorChecked],
-              ].map(([name, label, checked]) => (
-                <label
-                  key={String(name)}
-                  className="flex min-h-20 cursor-pointer flex-col justify-between rounded-2xl border border-gray-200 bg-gray-50 p-4 transition hover:border-gray-300"
-                >
-                  <input
-                    type="checkbox"
-                    name={String(name)}
-                    defaultChecked={Boolean(checked)}
-                    className="h-5 w-5"
-                  />
+                [
+                  "bodyChecked",
+                  "Body",
+                  inspection?.bodyChecked,
+                ],
+                [
+                  "wheelsChecked",
+                  "Velg & Ban",
+                  inspection?.wheelsChecked,
+                ],
+                [
+                  "glassChecked",
+                  "Kaca",
+                  inspection?.glassChecked,
+                ],
+                [
+                  "interiorChecked",
+                  "Interior",
+                  inspection?.interiorChecked,
+                ],
+              ].map(
+                ([
+                  name,
+                  label,
+                  checked,
+                ]) => (
+                  <label
+                    key={String(
+                      name,
+                    )}
+                    className="flex min-h-20 cursor-pointer flex-col justify-between rounded-2xl border border-gray-200 bg-gray-50 p-4 transition hover:border-gray-300"
+                  >
+                    <input
+                      type="checkbox"
+                      name={String(
+                        name,
+                      )}
+                      defaultChecked={Boolean(
+                        checked,
+                      )}
+                      className="h-5 w-5"
+                    />
 
-                  <span className="mt-3 text-sm font-bold text-gray-800">
-                    {String(label)}
-                  </span>
-                </label>
-              ))}
+                    <span className="mt-3 text-sm font-bold text-gray-800">
+                      {String(label)}
+                    </span>
+                  </label>
+                ),
+              )}
             </div>
 
             <div>
@@ -519,7 +921,10 @@ export default async function WorkOrderDetailPage({
 
               <textarea
                 name="notes"
-                defaultValue={inspection?.notes ?? ""}
+                defaultValue={
+                  inspection?.notes ??
+                  ""
+                }
                 placeholder="Contoh: baret pintu kanan, water spot kaca, jok kotor..."
                 className="min-h-28 w-full resize-none rounded-2xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
               />
@@ -574,37 +979,54 @@ export default async function WorkOrderDetailPage({
           </div>
 
           <div className="mt-5 overflow-hidden rounded-2xl border border-gray-200">
-            {items.length === 0 ? (
+            {items.length ===
+            0 ? (
               <div className="p-6 text-center text-sm text-gray-500">
                 Belum ada layanan.
               </div>
             ) : (
-              items.map((item, index) => (
-                <div
-                  key={item.id}
-                  className={`flex items-center justify-between gap-4 p-4 ${
-                    index !== items.length - 1
-                      ? "border-b border-gray-100"
-                      : ""
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">
-                      {item.description}
-                    </p>
+              items.map(
+                (
+                  item,
+                  index,
+                ) => (
+                  <div
+                    key={
+                      item.id
+                    }
+                    className={`flex items-center justify-between gap-4 p-4 ${
+                      index !==
+                      items.length -
+                        1
+                        ? "border-b border-gray-100"
+                        : ""
+                    }`}
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">
+                        {
+                          item.description
+                        }
+                      </p>
 
-                    <p className="mt-1 text-xs text-gray-400">
-                      Qty: {item.quantity}
-                    </p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Qty:{" "}
+                        {
+                          item.quantity
+                        }
+                      </p>
+                    </div>
+
+                    {!isTechnician && (
+                      <p className="whitespace-nowrap text-sm font-bold text-gray-900">
+                        {rupiah(
+                          item.lineTotal,
+                        )}
+                      </p>
+                    )}
                   </div>
-
-                  {!isTechnician && (
-                    <p className="whitespace-nowrap text-sm font-bold text-gray-900">
-                      {rupiah(item.lineTotal)}
-                    </p>
-                  )}
-                </div>
-              ))
+                ),
+              )
             )}
           </div>
 
@@ -615,15 +1037,21 @@ export default async function WorkOrderDetailPage({
                   Total Work Order
                 </p>
 
-                {row.discount > 0 && (
+                {row.discount >
+                  0 && (
                   <p className="mt-1 text-xs text-gray-400">
-                    Discount: {rupiah(row.discount)}
+                    Discount:{" "}
+                    {rupiah(
+                      row.discount,
+                    )}
                   </p>
                 )}
               </div>
 
               <p className="text-xl font-black md:text-2xl">
-                {rupiah(row.total)}
+                {rupiah(
+                  row.total,
+                )}
               </p>
             </div>
           )}
@@ -634,7 +1062,9 @@ export default async function WorkOrderDetailPage({
           <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm md:p-6">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-600">
-                <CircleDollarSign size={20} />
+                <CircleDollarSign
+                  size={20}
+                />
               </div>
 
               <SectionHeading
@@ -647,19 +1077,32 @@ export default async function WorkOrderDetailPage({
             {!invoice ? (
               <div className="mt-5 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-gray-500 shadow-sm">
-                  <ReceiptText size={22} />
+                  <ReceiptText
+                    size={22}
+                  />
                 </div>
 
                 <h3 className="mt-4 font-bold text-gray-900">
-                  Invoice belum dibuat
+                  Invoice belum
+                  dibuat
                 </h3>
 
                 <p className="mx-auto mt-1 max-w-sm text-sm leading-6 text-gray-500">
-                  Buat invoice untuk mulai mencatat pembayaran customer.
+                  Buat invoice untuk mulai mencatat
+                  pembayaran customer.
                 </p>
 
-                <form action={createInvoice} className="mt-5">
-                  <input type="hidden" name="workOrderId" value={row.id} />
+                <form
+                  action={
+                    createInvoice
+                  }
+                  className="mt-5"
+                >
+                  <input
+                    type="hidden"
+                    name="workOrderId"
+                    value={row.id}
+                  />
 
                   <button
                     type="submit"
@@ -680,18 +1123,26 @@ export default async function WorkOrderDetailPage({
                       </p>
 
                       <p className="mt-1 text-lg font-bold">
-                        {invoice.invoiceNumber}
+                        {
+                          invoice.invoiceNumber
+                        }
                       </p>
                     </div>
 
                     <div className="flex flex-col gap-2 sm:items-end">
-                      <InvoiceStatusBadge status={invoice.status} />
+                      <InvoiceStatusBadge
+                        status={
+                          invoice.status
+                        }
+                      />
 
                       <Link
                         href={`/invoices/${row.id}`}
                         className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold !text-gray-900 transition hover:bg-gray-100"
                       >
-                        <Printer size={16} />
+                        <Printer
+                          size={16}
+                        />
                         Cetak Invoice
                       </Link>
                     </div>
@@ -700,22 +1151,37 @@ export default async function WorkOrderDetailPage({
 
                 {/* MONEY */}
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                  <MoneyCard label="Total Invoice" value={invoice.total} />
+                  <MoneyCard
+                    label="Total Invoice"
+                    value={
+                      invoice.total
+                    }
+                  />
+
                   <MoneyCard
                     label="Sudah Dibayar"
-                    value={invoice.paidAmount}
+                    value={
+                      invoice.paidAmount
+                    }
                   />
+
                   <div className="col-span-2 md:col-span-1">
                     <MoneyCard
                       label="Sisa Tagihan"
-                      value={remainingAmount}
-                      highlight={remainingAmount > 0}
+                      value={
+                        remainingAmount
+                      }
+                      highlight={
+                        remainingAmount >
+                        0
+                      }
                     />
                   </div>
                 </div>
 
                 {/* PAYMENT FORM */}
-                {invoice.status !== "paid" && (
+                {invoice.status !==
+                  "paid" && (
                   <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
                     <div className="flex items-start gap-3">
                       <WalletCards
@@ -729,20 +1195,32 @@ export default async function WorkOrderDetailPage({
                         </h3>
 
                         <p className="mt-1 text-xs text-gray-500">
-                          Maksimal: {rupiah(remainingAmount)}
+                          Maksimal:{" "}
+                          {rupiah(
+                            remainingAmount,
+                          )}
                         </p>
                       </div>
                     </div>
 
                     <form
-                      action={addPayment}
+                      action={
+                        addPayment
+                      }
                       className="mt-5 grid gap-4 md:grid-cols-2"
                     >
-                      <input type="hidden" name="workOrderId" value={row.id} />
+                      <input
+                        type="hidden"
+                        name="workOrderId"
+                        value={row.id}
+                      />
+
                       <input
                         type="hidden"
                         name="invoiceId"
-                        value={invoice.id}
+                        value={
+                          invoice.id
+                        }
                       />
 
                       <div>
@@ -755,10 +1233,14 @@ export default async function WorkOrderDetailPage({
                           type="number"
                           inputMode="numeric"
                           min="1"
-                          max={remainingAmount}
+                          max={
+                            remainingAmount
+                          }
                           required
                           placeholder="Contoh: 500000"
-                          className={inputClass}
+                          className={
+                            inputClass
+                          }
                         />
                       </div>
 
@@ -767,11 +1249,24 @@ export default async function WorkOrderDetailPage({
                           Metode Pembayaran
                         </label>
 
-                        <select name="method" className={inputClass}>
-                          <option value="cash">Cash</option>
-                          <option value="transfer">Transfer</option>
-                          <option value="qris">QRIS</option>
-                          <option value="other">Lainnya</option>
+                        <select
+                          name="method"
+                          className={
+                            inputClass
+                          }
+                        >
+                          <option value="cash">
+                            Cash
+                          </option>
+                          <option value="transfer">
+                            Transfer
+                          </option>
+                          <option value="qris">
+                            QRIS
+                          </option>
+                          <option value="other">
+                            Lainnya
+                          </option>
                         </select>
                       </div>
 
@@ -783,7 +1278,9 @@ export default async function WorkOrderDetailPage({
                         <input
                           name="notes"
                           placeholder="Opsional"
-                          className={inputClass}
+                          className={
+                            inputClass
+                          }
                         />
                       </div>
 
@@ -798,7 +1295,8 @@ export default async function WorkOrderDetailPage({
                 )}
 
                 {/* PAID */}
-                {invoice.status === "paid" && (
+                {invoice.status ===
+                  "paid" && (
                   <div className="flex items-start gap-3 rounded-2xl border border-green-200 bg-green-50 p-5">
                     <BadgeCheck
                       size={22}
@@ -807,11 +1305,13 @@ export default async function WorkOrderDetailPage({
 
                     <div>
                       <p className="font-bold text-green-800">
-                        Invoice sudah lunas
+                        Invoice sudah
+                        lunas
                       </p>
 
                       <p className="mt-1 text-sm text-green-700">
-                        Seluruh pembayaran telah tercatat.
+                        Seluruh pembayaran
+                        telah tercatat.
                       </p>
                     </div>
                   </div>
@@ -826,47 +1326,66 @@ export default async function WorkOrderDetailPage({
                       </h3>
 
                       <p className="mt-1 text-xs text-gray-400">
-                        Transaksi yang sudah dicatat.
+                        Transaksi yang sudah
+                        dicatat.
                       </p>
                     </div>
 
                     <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-500">
-                      {paymentRows.length} transaksi
+                      {
+                        paymentRows.length
+                      }{" "}
+                      transaksi
                     </span>
                   </div>
 
                   <div className="mt-4 overflow-hidden rounded-2xl border border-gray-200">
-                    {paymentRows.length === 0 ? (
+                    {paymentRows.length ===
+                    0 ? (
                       <div className="p-6 text-center text-sm text-gray-500">
-                        Belum ada pembayaran.
+                        Belum ada
+                        pembayaran.
                       </div>
                     ) : (
-                      paymentRows.map((payment, index) => (
-                        <div
-                          key={payment.id}
-                          className={`flex items-center justify-between gap-4 p-4 ${
-                            index !== paymentRows.length - 1
-                              ? "border-b border-gray-100"
-                              : ""
-                          }`}
-                        >
-                          <div>
-                            <p className="text-sm font-bold text-gray-900">
-                              {payment.method.toUpperCase()}
-                            </p>
-
-                            {payment.notes && (
-                              <p className="mt-1 text-xs text-gray-400">
-                                {payment.notes}
+                      paymentRows.map(
+                        (
+                          payment,
+                          index,
+                        ) => (
+                          <div
+                            key={
+                              payment.id
+                            }
+                            className={`flex items-center justify-between gap-4 p-4 ${
+                              index !==
+                              paymentRows.length -
+                                1
+                                ? "border-b border-gray-100"
+                                : ""
+                            }`}
+                          >
+                            <div>
+                              <p className="text-sm font-bold text-gray-900">
+                                {payment.method.toUpperCase()}
                               </p>
-                            )}
-                          </div>
 
-                          <p className="whitespace-nowrap text-sm font-bold text-gray-900">
-                            {rupiah(payment.amount)}
-                          </p>
-                        </div>
-                      ))
+                              {payment.notes && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                  {
+                                    payment.notes
+                                  }
+                                </p>
+                              )}
+                            </div>
+
+                            <p className="whitespace-nowrap text-sm font-bold text-gray-900">
+                              {rupiah(
+                                payment.amount,
+                              )}
+                            </p>
+                          </div>
+                        ),
+                      )
                     )}
                   </div>
                 </div>
@@ -889,7 +1408,11 @@ function PhotoSection({
   title: string;
   photos: {
     id: string;
-    type: "inspection" | "before" | "after" | "damage";
+    type:
+      | "inspection"
+      | "before"
+      | "after"
+      | "damage";
   }[];
   workOrderId: string;
 }) {
@@ -897,8 +1420,14 @@ function PhotoSection({
     <div className="rounded-2xl border border-gray-200 bg-gray-50/60 p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Camera size={18} className="text-gray-500" />
-          <h3 className="font-bold text-gray-900">{title}</h3>
+          <Camera
+            size={18}
+            className="text-gray-500"
+          />
+
+          <h3 className="font-bold text-gray-900">
+            {title}
+          </h3>
         </div>
 
         <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-gray-500 ring-1 ring-gray-200">
@@ -910,8 +1439,17 @@ function PhotoSection({
         action={uploadJobPhoto}
         className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-white p-4"
       >
-        <input type="hidden" name="workOrderId" value={workOrderId} />
-        <input type="hidden" name="type" value={type} />
+        <input
+          type="hidden"
+          name="workOrderId"
+          value={workOrderId}
+        />
+
+        <input
+          type="hidden"
+          name="type"
+          value={type}
+        />
 
         <input
           type="file"
@@ -932,28 +1470,35 @@ function PhotoSection({
 
       {photos.length === 0 ? (
         <div className="mt-3 flex min-h-28 flex-col items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-white text-center">
-          <ImageIcon size={24} className="text-gray-300" />
+          <ImageIcon
+            size={24}
+            className="text-gray-300"
+          />
+
           <p className="mt-2 text-xs text-gray-400">
-            Belum ada foto {title.toLowerCase()}.
+            Belum ada foto{" "}
+            {title.toLowerCase()}.
           </p>
         </div>
       ) : (
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {photos.map((photo) => (
-            <div
-              key={photo.id}
-              className="relative aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100"
-            >
-              <Image
-                src={`/api/photos/${photo.id}`}
-                alt={`Foto ${type}`}
-                fill
-                sizes="(max-width: 768px) 33vw, 180px"
-                className="object-cover"
-                unoptimized
-              />
-            </div>
-          ))}
+          {photos.map(
+            (photo) => (
+              <div
+                key={photo.id}
+                className="relative aspect-square overflow-hidden rounded-xl border border-gray-200 bg-gray-100"
+              >
+                <Image
+                  src={`/api/photos/${photo.id}`}
+                  alt={`Foto ${type}`}
+                  fill
+                  sizes="(max-width: 768px) 33vw, 180px"
+                  className="object-cover"
+                  unoptimized
+                />
+              </div>
+            ),
+          )}
         </div>
       )}
     </div>
@@ -975,19 +1520,32 @@ function SectionHeading({
         {eyebrow}
       </p>
 
-      <h2 className="mt-1 text-lg font-bold text-gray-900">{title}</h2>
+      <h2 className="mt-1 text-lg font-bold text-gray-900">
+        {title}
+      </h2>
 
       {description && (
-        <p className="mt-1 text-sm leading-6 text-gray-500">{description}</p>
+        <p className="mt-1 text-sm leading-6 text-gray-500">
+          {description}
+        </p>
       )}
     </div>
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function Info({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
   return (
     <div className="rounded-2xl bg-gray-50 p-4">
-      <p className="text-xs font-medium text-gray-400">{label}</p>
+      <p className="text-xs font-medium text-gray-400">
+        {label}
+      </p>
+
       <p className="mt-1 break-words text-sm font-bold text-gray-800">
         {value}
       </p>
@@ -995,28 +1553,46 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    inspection: "bg-amber-50 text-amber-700",
-    in_progress: "bg-blue-50 text-blue-700",
+function StatusBadge({
+  status,
+}: {
+  status: string;
+}) {
+  const styles: Record<
+    string,
+    string
+  > = {
+    inspection:
+      "bg-amber-50 text-amber-700",
+    in_progress:
+      "bg-blue-50 text-blue-700",
     qc: "bg-purple-50 text-purple-700",
-    ready: "bg-cyan-50 text-cyan-700",
-    completed: "bg-green-50 text-green-700",
-    cancelled: "bg-red-50 text-red-700",
+    ready:
+      "bg-cyan-50 text-cyan-700",
+    completed:
+      "bg-green-50 text-green-700",
+    cancelled:
+      "bg-red-50 text-red-700",
   };
 
   return (
     <span
       className={`w-fit rounded-full px-4 py-2 text-xs font-bold uppercase ${
-        styles[status] ?? "bg-gray-100 text-gray-700"
+        styles[status] ??
+        "bg-gray-100 text-gray-700"
       }`}
     >
-      {statusNames[status] ?? status}
+      {statusNames[status] ??
+        status}
     </span>
   );
 }
 
-function InvoiceStatusBadge({ status }: { status: string }) {
+function InvoiceStatusBadge({
+  status,
+}: {
+  status: string;
+}) {
   const style =
     status === "paid"
       ? "bg-green-400 text-green-950"
@@ -1054,7 +1630,9 @@ function MoneyCard({
     >
       <p
         className={`text-xs font-semibold ${
-          highlight ? "text-amber-700" : "text-gray-400"
+          highlight
+            ? "text-amber-700"
+            : "text-gray-400"
         }`}
       >
         {label}
@@ -1062,7 +1640,9 @@ function MoneyCard({
 
       <p
         className={`mt-1 break-words text-lg font-black ${
-          highlight ? "text-amber-900" : "text-gray-900"
+          highlight
+            ? "text-amber-900"
+            : "text-gray-900"
         }`}
       >
         {rupiah(value)}
@@ -1072,11 +1652,14 @@ function MoneyCard({
 }
 
 function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Jakarta",
-  }).format(date);
+  return new Intl.DateTimeFormat(
+    "id-ID",
+    {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Asia/Jakarta",
+    },
+  ).format(date);
 }
 
 const inputClass =
