@@ -116,7 +116,7 @@ export default function WorkOrdersList({
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-7xl space-y-6">
       {/* HEADER */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -174,9 +174,7 @@ export default function WorkOrdersList({
               type="search"
               value={search}
               onChange={(event) =>
-                setSearch(
-                  event.target.value,
-                )
+                setSearch(event.target.value)
               }
               placeholder="Cari customer, plat, kendaraan..."
               className="h-11 w-full rounded-xl border border-gray-300 bg-white pl-10 pr-10 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
@@ -205,8 +203,7 @@ export default function WorkOrdersList({
               value={status}
               onChange={(event) =>
                 setStatus(
-                  event.target
-                    .value as StatusFilter,
+                  event.target.value as StatusFilter,
                 )
               }
               className="h-11 w-full min-w-[190px] appearance-none rounded-xl border border-gray-300 bg-white pl-10 pr-9 text-sm font-medium text-gray-700 outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
@@ -301,123 +298,197 @@ export default function WorkOrdersList({
             onReset={resetFilters}
           />
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-            {filteredRows.map((row) => (
-              <Link
-                key={row.id}
-                href={`/work-orders/${row.id}`}
-                className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:border-gray-300 hover:shadow-md"
-              >
-                <div className="p-5">
-                  {/* STATUS + DATE */}
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                        Dibuat
-                      </p>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-gray-50">
+                    <th className="px-5 py-3.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+                      Work Order
+                    </th>
 
-                      <div className="mt-1 flex items-center gap-2">
-                        <Clock3
-                          size={17}
-                          className="text-gray-400"
-                        />
+                    <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+                      Tanggal
+                    </th>
 
-                        <span className="text-sm font-bold text-gray-900">
-                          {formatDate(
-                            row.createdAt,
-                          )}
-                        </span>
-                      </div>
-                    </div>
+                    <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+                      Customer
+                    </th>
 
-                    <StatusBadge
-                      status={row.status}
-                    />
-                  </div>
+                    <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+                      Kendaraan
+                    </th>
 
-                  {/* CUSTOMER + VEHICLE */}
-                  <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl bg-gray-50 p-3.5">
-                      <div className="flex items-start gap-3">
-                        <UserRound
-                          size={19}
-                          className="mt-0.5 shrink-0 text-gray-400"
-                        />
+                    <th className="px-4 py-3.5 text-xs font-bold uppercase tracking-wide text-gray-400">
+                      Status
+                    </th>
 
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-400">
-                            Customer
-                          </p>
+                    {!isTechnician && (
+                      <th className="px-5 py-3.5 text-right text-xs font-bold uppercase tracking-wide text-gray-400">
+                        Total
+                      </th>
+                    )}
 
-                          <p className="truncate text-sm font-bold text-gray-900">
-                            {row.customer}
-                          </p>
+                    <th className="w-10 px-4 py-3.5" />
+                  </tr>
+                </thead>
 
-                          <p className="mt-0.5 truncate text-xs text-gray-500">
-                            {row.phone || "-"}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                <tbody>
+                  {filteredRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="group border-b border-gray-100 last:border-b-0 hover:bg-gray-50/70"
+                    >
+                      {/* WO */}
+                      <td className="px-5 py-4">
+                        <Link
+                          href={`/work-orders/${row.id}`}
+                          className="block"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-500 transition group-hover:bg-gray-900 group-hover:text-white">
+                              <ClipboardList size={17} />
+                            </div>
 
-                    <div className="rounded-xl bg-gray-50 p-3.5">
-                      <div className="flex items-start gap-3">
-                        <Car
-                          size={19}
-                          className="mt-0.5 shrink-0 text-gray-400"
-                        />
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-gray-900">
+                                {row.id}
+                              </p>
 
-                        <div className="min-w-0">
-                          <p className="text-xs text-gray-400">
-                            Kendaraan
-                          </p>
+                              <p className="mt-0.5 text-xs text-gray-400">
+                                Work Order
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                      </td>
 
-                          <p className="truncate text-sm font-bold text-gray-900">
-                            {row.brand}{" "}
-                            {row.model}
-                          </p>
+                      {/* DATE */}
+                      <td className="px-4 py-4">
+                        <Link
+                          href={`/work-orders/${row.id}`}
+                          className="block"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Clock3
+                              size={15}
+                              className="shrink-0 text-gray-400"
+                            />
 
-                          <p className="mt-0.5 truncate text-xs font-semibold text-gray-500">
-                            {row.plate}
+                            <span className="whitespace-nowrap text-sm font-semibold text-gray-700">
+                              {formatDate(
+                                row.createdAt,
+                              )}
+                            </span>
+                          </div>
+                        </Link>
+                      </td>
 
-                            {row.color
-                              ? ` · ${row.color}`
-                              : ""}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                      {/* CUSTOMER */}
+                      <td className="px-4 py-4">
+                        <Link
+                          href={`/work-orders/${row.id}`}
+                          className="block max-w-[190px]"
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <UserRound
+                              size={17}
+                              className="mt-0.5 shrink-0 text-gray-400"
+                            />
 
-                  {/* TOTAL */}
-                  {!isTechnician && (
-                    <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50/70 p-3.5">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                        Nilai Work Order
-                      </p>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-gray-900">
+                                {row.customer}
+                              </p>
 
-                      <p className="mt-1 text-lg font-bold text-gray-900">
-                        Rp{" "}
-                        {row.total.toLocaleString(
-                          "id-ID",
-                        )}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                              <p className="mt-0.5 truncate text-xs text-gray-500">
+                                {row.phone || "-"}
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                      </td>
 
-                {/* FOOTER */}
-                <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50/50 px-5 py-4">
-                  <span className="text-sm font-semibold text-gray-700">
-                    Buka Work Order
-                  </span>
+                      {/* VEHICLE */}
+                      <td className="px-4 py-4">
+                        <Link
+                          href={`/work-orders/${row.id}`}
+                          className="block max-w-[210px]"
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <Car
+                              size={17}
+                              className="mt-0.5 shrink-0 text-gray-400"
+                            />
 
-                  <span className="text-gray-400 transition group-hover:translate-x-1 group-hover:text-gray-900">
-                    →
-                  </span>
-                </div>
-              </Link>
-            ))}
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-gray-900">
+                                {row.brand}{" "}
+                                {row.model}
+                              </p>
+
+                              <p className="mt-0.5 truncate text-xs font-semibold text-gray-500">
+                                {row.plate}
+
+                                {row.color
+                                  ? ` · ${row.color}`
+                                  : ""}
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                      </td>
+
+                      {/* STATUS */}
+                      <td className="px-4 py-4">
+                        <Link
+                          href={`/work-orders/${row.id}`}
+                          className="inline-block"
+                        >
+                          <StatusBadge
+                            status={row.status}
+                          />
+                        </Link>
+                      </td>
+
+                      {/* TOTAL */}
+                      {!isTechnician && (
+                        <td className="px-5 py-4 text-right">
+                          <Link
+                            href={`/work-orders/${row.id}`}
+                            className="block"
+                          >
+                            <span className="whitespace-nowrap text-sm font-bold text-gray-900">
+                              Rp{" "}
+                              {row.total.toLocaleString(
+                                "id-ID",
+                              )}
+                            </span>
+                          </Link>
+                        </td>
+                      )}
+
+                      {/* ARROW */}
+                      <td className="px-4 py-4 text-right">
+                        <Link
+                          href={`/work-orders/${row.id}`}
+                          aria-label={`Buka Work Order ${row.id}`}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-lg text-gray-300 transition group-hover:bg-gray-100 group-hover:text-gray-900"
+                        >
+                          →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* MOBILE HINT */}
+            <div className="border-t border-gray-100 bg-gray-50 px-4 py-2.5 text-center text-xs text-gray-400 md:hidden">
+              Geser tabel ke kiri atau kanan untuk
+              melihat semua informasi.
+            </div>
           </div>
         )}
       </section>

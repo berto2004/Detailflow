@@ -37,6 +37,7 @@ import { requireWorkspace } from "@/lib/workspace";
 
 import {
   addPayment,
+  assignWorkOrder,
   createInvoice,
   saveInspection,
   updateWorkOrderStatus,
@@ -145,6 +146,8 @@ export default async function WorkOrderDetailPage({
 
   const [row] = await db
     .select({
+      assignedMemberId:
+      workOrders.assignedMemberId,
       id: workOrders.id,
       status: workOrders.status,
       subtotal: workOrders.subtotal,
@@ -187,7 +190,7 @@ export default async function WorkOrderDetailPage({
   if (!row) {
     notFound();
   }
-
+  
   const items = await db
     .select({
       id: workOrderItems.id,

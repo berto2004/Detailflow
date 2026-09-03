@@ -23,7 +23,7 @@ import {
   vehicles,
 } from "@/db/schema";
 import { requireRole } from "@/lib/permissions";
-import { createWorkOrderFromBooking } from "@/app/work-orders/actions";
+import { BookingWorkOrderForm } from "./booking-work-order-form";
 
 export default async function BookingsPage() {
   const workspace = await requireRole([
@@ -276,7 +276,7 @@ export default async function BookingsPage() {
                             <p className="mt-0.5 truncate text-xs font-semibold text-gray-500">
                               {row.plate}
                               {row.color
-                                ? ` · ${row.color}`
+                                ? ` Â· ${row.color}`
                                 : ""}
                             </p>
                           </div>
@@ -320,27 +320,9 @@ export default async function BookingsPage() {
                   {/* ACTION */}
                   <div className="border-t border-gray-100 bg-gray-50/50 px-5 py-4">
                     {row.status === "booked" ? (
-                      <form
-                        action={
-                          createWorkOrderFromBooking
-                        }
-                      >
-                        <input
-                          type="hidden"
-                          name="bookingId"
-                          value={row.id}
-                        />
-
-                        <button
-                          type="submit"
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-semibold !text-white transition hover:bg-gray-800"
-                        >
-                          <CheckCircle2
-                            size={17}
-                          />
-                          Check-in & Buat Work Order
-                        </button>
-                      </form>
+                      <BookingWorkOrderForm
+                        bookingId={row.id}
+                      />
                     ) : (
                       <div className="flex items-center gap-2 text-sm font-medium text-gray-400">
                         <CheckCircle2

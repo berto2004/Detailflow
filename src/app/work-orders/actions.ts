@@ -2,14 +2,24 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, count, eq } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  gte,
+  lt,
+} from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
   bookings,
   invoices,
+  inspections,
+  jobPhotos,
+  members,
   payments,
   services,
+  subscriptions,
   workOrderItems,
   workOrders,
 } from "@/db/schema";
@@ -32,7 +42,9 @@ export async function createWorkOrderFromBooking(
   );
 
   if (!bookingId) {
-    throw new Error("Booking tidak ditemukan.");
+    throw new Error(
+      "Booking tidak ditemukan.",
+    );
   }
 
   const [booking] = await db
@@ -46,7 +58,10 @@ export async function createWorkOrderFromBooking(
     .from(bookings)
     .where(
       and(
-        eq(bookings.id, bookingId),
+        eq(
+          bookings.id,
+          bookingId,
+        ),
         eq(
           bookings.organizationId,
           workspace.organizationId,
@@ -56,7 +71,9 @@ export async function createWorkOrderFromBooking(
     .limit(1);
 
   if (!booking) {
-    throw new Error("Booking tidak valid.");
+    throw new Error(
+      "Booking tidak valid.",
+    );
   }
 
   if (
@@ -75,7 +92,10 @@ export async function createWorkOrderFromBooking(
     .from(workOrders)
     .where(
       and(
-        eq(workOrders.bookingId, bookingId),
+        eq(
+          workOrders.bookingId,
+          bookingId,
+        ),
         eq(
           workOrders.organizationId,
           workspace.organizationId,
@@ -85,7 +105,9 @@ export async function createWorkOrderFromBooking(
     .limit(1);
 
   if (existing) {
-    redirect(`/work-orders/${existing.id}`);
+    redirect(
+      `/work-orders/${existing.id}`,
+    );
   }
 
   let service:
@@ -120,27 +142,94 @@ export async function createWorkOrderFromBooking(
   }
 
   const now = new Date();
-  const workOrderId = createId("wo");
+  const workOrderId =
+    createId("wo");
 
-  const total = service?.price ?? 0;
+  const total =
+    service?.price ?? 0;
 
-  const [usage] = await db
-    .select({
-      count: count(),
-    })
-    .from(workOrders)
-    .where(
-      eq(
-        workOrders.organizationId,
-        workspace.organizationId,
-      ),
+  /*
+   * Ambil subscription organisasi.
+   */
+  const [subscription] =
+    await db
+      .select({
+        currentPeriodStart:
+          subscriptions.currentPeriodStart,
+        currentPeriodEnd:
+          subscriptions.currentPeriodEnd,
+        startedAt:
+          subscriptions.startedAt,
+        status:
+          subscriptions.status,
+      })
+      .from(subscriptions)
+      .where(
+        eq(
+          subscriptions.organizationId,
+          workspace.organizationId,
+        ),
+      )
+      .limit(1);
+
+  if (
+    !subscription ||
+    ![
+      "trialing",
+      "active",
+    ].includes(
+      subscription.status,
+    )
+  ) {
+    throw new Error(
+      "Subscription Anda tidak aktif.",
     );
+  }
 
-  const canCreate = await checkLimit(
-    workspace.organizationId,
-    "work_orders",
-    usage?.count ?? 0,
-  );
+  /*
+   * Gunakan periode billing jika tersedia.
+   */
+  const periodStart =
+    subscription.currentPeriodStart ??
+    subscription.startedAt;
+
+  const periodEnd =
+    subscription.currentPeriodEnd ??
+    now;
+
+  /*
+   * Hitung Work Order hanya dalam periode
+   * subscription yang sedang berjalan.
+   */
+  const [usage] =
+    await db
+      .select({
+        count: count(),
+      })
+      .from(workOrders)
+      .where(
+        and(
+          eq(
+            workOrders.organizationId,
+            workspace.organizationId,
+          ),
+          gte(
+            workOrders.createdAt,
+            periodStart,
+          ),
+          lt(
+            workOrders.createdAt,
+            periodEnd,
+          ),
+        ),
+      );
+
+  const canCreate =
+    await checkLimit(
+      workspace.organizationId,
+      "work_orders",
+      usage?.count ?? 0,
+    );
 
   if (!canCreate) {
     throw new Error(
@@ -148,21 +237,25 @@ export async function createWorkOrderFromBooking(
     );
   }
 
-  await db.insert(workOrders).values({
-    id: workOrderId,
-    organizationId:
-      workspace.organizationId,
-    bookingId,
-    customerId: booking.customerId,
-    vehicleId: booking.vehicleId,
-    assignedMemberId: null,
-    status: "inspection",
-    subtotal: total,
-    discount: 0,
-    total,
-    createdAt: now,
-    updatedAt: now,
-  });
+  await db
+    .insert(workOrders)
+    .values({
+      id: workOrderId,
+      organizationId:
+        workspace.organizationId,
+      bookingId,
+      customerId:
+        booking.customerId,
+      vehicleId:
+        booking.vehicleId,
+      assignedMemberId: null,
+      status: "inspection",
+      subtotal: total,
+      discount: 0,
+      total,
+      createdAt: now,
+      updatedAt: now,
+    });
 
   if (service) {
     await db
@@ -173,10 +266,13 @@ export async function createWorkOrderFromBooking(
           workspace.organizationId,
         workOrderId,
         serviceId: service.id,
-        description: service.name,
+        description:
+          service.name,
         quantity: 1,
-        unitPrice: service.price,
-        lineTotal: service.price,
+        unitPrice:
+          service.price,
+        lineTotal:
+          service.price,
       });
   }
 
@@ -188,7 +284,10 @@ export async function createWorkOrderFromBooking(
     })
     .where(
       and(
-        eq(bookings.id, bookingId),
+        eq(
+          bookings.id,
+          bookingId,
+        ),
         eq(
           bookings.organizationId,
           workspace.organizationId,
@@ -196,30 +295,230 @@ export async function createWorkOrderFromBooking(
       ),
     );
 
-  revalidatePath("/bookings");
-  revalidatePath("/work-orders");
+  revalidatePath(
+    "/bookings",
+  );
 
-  redirect(`/work-orders/${workOrderId}`);
+  revalidatePath(
+    "/work-orders",
+  );
+
+  redirect(
+    `/work-orders/${workOrderId}`,
+  );
+}
+
+/*
+ * =========================================================
+ * ASSIGN TECHNICIAN
+ * =========================================================
+ *
+ * Hanya owner/admin yang boleh melakukan assignment.
+ *
+ * assignedMemberId boleh dikosongkan untuk melepas
+ * technician dari Work Order.
+ */
+export async function assignWorkOrder(
+  formData: FormData,
+) {
+  const workspace =
+    await requireRole([
+      "owner",
+      "admin",
+    ]);
+
+  const db = getDb();
+
+  const workOrderId =
+    String(
+      formData.get(
+        "workOrderId",
+      ) ?? "",
+    ).trim();
+
+  const memberIdValue =
+    String(
+      formData.get(
+        "memberId",
+      ) ?? "",
+    ).trim();
+
+  if (!workOrderId) {
+    throw new Error(
+      "Work order tidak valid.",
+    );
+  }
+
+  /*
+   * String kosong berarti unassign.
+   */
+  const memberId =
+    memberIdValue || null;
+
+  /*
+   * Pastikan Work Order memang milik
+   * organisasi user yang sedang login.
+   */
+  const [workOrder] =
+    await db
+      .select({
+        id: workOrders.id,
+        assignedMemberId:
+          workOrders.assignedMemberId,
+      })
+      .from(workOrders)
+      .where(
+        and(
+          eq(
+            workOrders.id,
+            workOrderId,
+          ),
+          eq(
+            workOrders.organizationId,
+            workspace.organizationId,
+          ),
+        ),
+      )
+      .limit(1);
+
+  if (!workOrder) {
+    throw new Error(
+      "Work order tidak ditemukan.",
+    );
+  }
+
+  /*
+   * Kalau memberId null:
+   * lepaskan technician.
+   */
+  if (!memberId) {
+    await db
+      .update(workOrders)
+      .set({
+        assignedMemberId: null,
+        updatedAt:
+          new Date(),
+      })
+      .where(
+        and(
+          eq(
+            workOrders.id,
+            workOrderId,
+          ),
+          eq(
+            workOrders.organizationId,
+            workspace.organizationId,
+          ),
+        ),
+      );
+
+    revalidatePath(
+      "/work-orders",
+    );
+
+    revalidatePath(
+      `/work-orders/${workOrderId}`,
+    );
+
+    return;
+  }
+
+  /*
+   * Pastikan member:
+   *
+   * 1. berasal dari organisasi yang sama
+   * 2. masih aktif
+   * 3. memiliki role technician
+   */
+  const [technician] =
+    await db
+      .select({
+        id: members.id,
+      })
+      .from(members)
+      .where(
+        and(
+          eq(
+            members.id,
+            memberId,
+          ),
+          eq(
+            members.organizationId,
+            workspace.organizationId,
+          ),
+          eq(
+            members.role,
+            "technician",
+          ),
+          eq(
+            members.active,
+            true,
+          ),
+        ),
+      )
+      .limit(1);
+
+  if (!technician) {
+    throw new Error(
+      "Technician tidak valid atau tidak aktif.",
+    );
+  }
+
+  await db
+    .update(workOrders)
+    .set({
+      assignedMemberId:
+        technician.id,
+      updatedAt:
+        new Date(),
+    })
+    .where(
+      and(
+        eq(
+          workOrders.id,
+          workOrderId,
+        ),
+        eq(
+          workOrders.organizationId,
+          workspace.organizationId,
+        ),
+      ),
+    );
+
+  revalidatePath(
+    "/work-orders",
+  );
+
+  revalidatePath(
+    `/work-orders/${workOrderId}`,
+  );
 }
 
 export async function updateWorkOrderStatus(
   formData: FormData,
 ) {
-  const workspace = await requireRole([
-    "owner",
-    "admin",
-    "technician",
-  ]);
+  const workspace =
+    await requireRole([
+      "owner",
+      "admin",
+      "technician",
+    ]);
 
   const db = getDb();
 
-  const workOrderId = String(
-    formData.get("workOrderId") ?? "",
-  );
+  const workOrderId =
+    String(
+      formData.get(
+        "workOrderId",
+      ) ?? "",
+    );
 
-  const status = String(
-    formData.get("status") ?? "",
-  );
+  const status =
+    String(
+      formData.get(
+        "status",
+      ) ?? "",
+    );
 
   const allowed = [
     "inspection",
@@ -241,21 +540,25 @@ export async function updateWorkOrderStatus(
     );
   }
 
-  const [workOrder] = await db
-    .select({
-      id: workOrders.id,
-    })
-    .from(workOrders)
-    .where(
-      and(
-        eq(workOrders.id, workOrderId),
-        eq(
-          workOrders.organizationId,
-          workspace.organizationId,
+  const [workOrder] =
+    await db
+      .select({
+        id: workOrders.id,
+      })
+      .from(workOrders)
+      .where(
+        and(
+          eq(
+            workOrders.id,
+            workOrderId,
+          ),
+          eq(
+            workOrders.organizationId,
+            workspace.organizationId,
+          ),
         ),
-      ),
-    )
-    .limit(1);
+      )
+      .limit(1);
 
   if (!workOrder) {
     throw new Error(
@@ -268,11 +571,15 @@ export async function updateWorkOrderStatus(
     .set({
       status:
         status as (typeof allowed)[number],
-      updatedAt: new Date(),
+      updatedAt:
+        new Date(),
     })
     .where(
       and(
-        eq(workOrders.id, workOrderId),
+        eq(
+          workOrders.id,
+          workOrderId,
+        ),
         eq(
           workOrders.organizationId,
           workspace.organizationId,
@@ -280,7 +587,10 @@ export async function updateWorkOrderStatus(
       ),
     );
 
-  revalidatePath("/work-orders");
+  revalidatePath(
+    "/work-orders",
+  );
+
   revalidatePath(
     `/work-orders/${workOrderId}`,
   );
@@ -289,17 +599,21 @@ export async function updateWorkOrderStatus(
 export async function saveInspection(
   formData: FormData,
 ) {
-  const workspace = await requireRole([
-    "owner",
-    "admin",
-    "technician",
-  ]);
+  const workspace =
+    await requireRole([
+      "owner",
+      "admin",
+      "technician",
+    ]);
 
   const db = getDb();
 
-  const workOrderId = String(
-    formData.get("workOrderId") ?? "",
-  );
+  const workOrderId =
+    String(
+      formData.get(
+        "workOrderId",
+      ) ?? "",
+    );
 
   if (!workOrderId) {
     throw new Error(
@@ -307,21 +621,25 @@ export async function saveInspection(
     );
   }
 
-  const [workOrder] = await db
-    .select({
-      id: workOrders.id,
-    })
-    .from(workOrders)
-    .where(
-      and(
-        eq(workOrders.id, workOrderId),
-        eq(
-          workOrders.organizationId,
-          workspace.organizationId,
+  const [workOrder] =
+    await db
+      .select({
+        id: workOrders.id,
+      })
+      .from(workOrders)
+      .where(
+        and(
+          eq(
+            workOrders.id,
+            workOrderId,
+          ),
+          eq(
+            workOrders.organizationId,
+            workspace.organizationId,
+          ),
         ),
-      ),
-    )
-    .limit(1);
+      )
+      .limit(1);
 
   if (!workOrder) {
     throw new Error(
@@ -329,53 +647,69 @@ export async function saveInspection(
     );
   }
 
-  const { inspections } =
-    await import("@/db/schema");
-
-  const now = new Date();
+  const now =
+    new Date();
 
   const values = {
     bodyChecked:
-      formData.get("bodyChecked") === "on",
+      formData.get(
+        "bodyChecked",
+      ) === "on",
+
     wheelsChecked:
-      formData.get("wheelsChecked") === "on",
+      formData.get(
+        "wheelsChecked",
+      ) === "on",
+
     glassChecked:
-      formData.get("glassChecked") === "on",
+      formData.get(
+        "glassChecked",
+      ) === "on",
+
     interiorChecked:
-      formData.get("interiorChecked") ===
-      "on",
+      formData.get(
+        "interiorChecked",
+      ) === "on",
+
     notes:
       String(
-        formData.get("notes") ?? "",
+        formData.get(
+          "notes",
+        ) ?? "",
       ).trim() || null,
+
     updatedAt: now,
   };
 
-  const [existing] = await db
-    .select({
-      id: inspections.id,
-    })
-    .from(inspections)
-    .where(
-      and(
-        eq(
-          inspections.workOrderId,
-          workOrderId,
+  const [existing] =
+    await db
+      .select({
+        id: inspections.id,
+      })
+      .from(inspections)
+      .where(
+        and(
+          eq(
+            inspections.workOrderId,
+            workOrderId,
+          ),
+          eq(
+            inspections.organizationId,
+            workspace.organizationId,
+          ),
         ),
-        eq(
-          inspections.organizationId,
-          workspace.organizationId,
-        ),
-      ),
-    )
-    .limit(1);
+      )
+      .limit(1);
 
   if (existing) {
     await db
       .update(inspections)
       .set(values)
       .where(
-        eq(inspections.id, existing.id),
+        eq(
+          inspections.id,
+          existing.id,
+        ),
       );
   } else {
     await db
@@ -398,23 +732,33 @@ export async function saveInspection(
 export async function uploadJobPhoto(
   formData: FormData,
 ) {
-  const workspace = await requireRole([
-    "owner",
-    "admin",
-    "technician",
-  ]);
+  const workspace =
+    await requireRole([
+      "owner",
+      "admin",
+      "technician",
+    ]);
 
   const db = getDb();
 
-  const workOrderId = String(
-    formData.get("workOrderId") ?? "",
-  );
+  const workOrderId =
+    String(
+      formData.get(
+        "workOrderId",
+      ) ?? "",
+    );
 
-  const type = String(
-    formData.get("type") ?? "",
-  );
+  const type =
+    String(
+      formData.get(
+        "type",
+      ) ?? "",
+    );
 
-  const file = formData.get("photo");
+  const file =
+    formData.get(
+      "photo",
+    );
 
   const allowedTypes = [
     "inspection",
@@ -431,36 +775,49 @@ export async function uploadJobPhoto(
     !(file instanceof File) ||
     file.size === 0
   ) {
-    throw new Error("Foto tidak valid.");
+    throw new Error(
+      "Foto tidak valid.",
+    );
   }
 
-  if (!file.type.startsWith("image/")) {
+  if (
+    !file.type.startsWith(
+      "image/",
+    )
+  ) {
     throw new Error(
       "File harus berupa gambar.",
     );
   }
 
-  if (file.size > 8 * 1024 * 1024) {
+  if (
+    file.size >
+    8 * 1024 * 1024
+  ) {
     throw new Error(
       "Ukuran foto maksimal 8 MB.",
     );
   }
 
-  const [workOrder] = await db
-    .select({
-      id: workOrders.id,
-    })
-    .from(workOrders)
-    .where(
-      and(
-        eq(workOrders.id, workOrderId),
-        eq(
-          workOrders.organizationId,
-          workspace.organizationId,
+  const [workOrder] =
+    await db
+      .select({
+        id: workOrders.id,
+      })
+      .from(workOrders)
+      .where(
+        and(
+          eq(
+            workOrders.id,
+            workOrderId,
+          ),
+          eq(
+            workOrders.organizationId,
+            workspace.organizationId,
+          ),
         ),
-      ),
-    )
-    .limit(1);
+      )
+      .limit(1);
 
   if (!workOrder) {
     throw new Error(
@@ -468,13 +825,16 @@ export async function uploadJobPhoto(
     );
   }
 
-  const { getCloudflareContext } =
-    await import(
-      "@opennextjs/cloudflare"
-    );
+  const {
+    getCloudflareContext,
+  } = await import(
+    "@opennextjs/cloudflare"
+  );
 
   const { jobPhotos } =
-    await import("@/db/schema");
+    await import(
+      "@/db/schema"
+    );
 
   const { env } =
     await getCloudflareContext({
@@ -487,12 +847,16 @@ export async function uploadJobPhoto(
     );
   }
 
-  const photoId = createId("photo");
+  const photoId =
+    createId("photo");
 
   const ext =
     file.type
       .split("/")[1]
-      ?.replace("jpeg", "jpg") || "jpg";
+      ?.replace(
+        "jpeg",
+        "jpg",
+      ) || "jpg";
 
   const objectKey =
     `${workspace.organizationId}/` +
@@ -505,7 +869,8 @@ export async function uploadJobPhoto(
     await file.arrayBuffer(),
     {
       httpMetadata: {
-        contentType: file.type,
+        contentType:
+          file.type,
       },
     },
   );
@@ -521,7 +886,8 @@ export async function uploadJobPhoto(
         type as (typeof allowedTypes)[number],
       objectKey,
       caption: null,
-      createdAt: new Date(),
+      createdAt:
+        new Date(),
     });
 
   revalidatePath(
@@ -532,16 +898,20 @@ export async function uploadJobPhoto(
 export async function createInvoice(
   formData: FormData,
 ) {
-  const workspace = await requireRole([
-    "owner",
-    "admin",
-  ]);
+  const workspace =
+    await requireRole([
+      "owner",
+      "admin",
+    ]);
 
   const db = getDb();
 
-  const workOrderId = String(
-    formData.get("workOrderId") ?? "",
-  );
+  const workOrderId =
+    String(
+      formData.get(
+        "workOrderId",
+      ) ?? "",
+    );
 
   if (!workOrderId) {
     throw new Error(
@@ -549,24 +919,31 @@ export async function createInvoice(
     );
   }
 
-  const [wo] = await db
-    .select({
-      id: workOrders.id,
-      subtotal: workOrders.subtotal,
-      discount: workOrders.discount,
-      total: workOrders.total,
-    })
-    .from(workOrders)
-    .where(
-      and(
-        eq(workOrders.id, workOrderId),
-        eq(
-          workOrders.organizationId,
-          workspace.organizationId,
+  const [wo] =
+    await db
+      .select({
+        id: workOrders.id,
+        subtotal:
+          workOrders.subtotal,
+        discount:
+          workOrders.discount,
+        total:
+          workOrders.total,
+      })
+      .from(workOrders)
+      .where(
+        and(
+          eq(
+            workOrders.id,
+            workOrderId,
+          ),
+          eq(
+            workOrders.organizationId,
+            workspace.organizationId,
+          ),
         ),
-      ),
-    )
-    .limit(1);
+      )
+      .limit(1);
 
   if (!wo) {
     throw new Error(
@@ -574,33 +951,36 @@ export async function createInvoice(
     );
   }
 
-  const [existing] = await db
-    .select({
-      id: invoices.id,
-    })
-    .from(invoices)
-    .where(
-      and(
-        eq(
-          invoices.workOrderId,
-          workOrderId,
+  const [existing] =
+    await db
+      .select({
+        id: invoices.id,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(
+            invoices.workOrderId,
+            workOrderId,
+          ),
+          eq(
+            invoices.organizationId,
+            workspace.organizationId,
+          ),
         ),
-        eq(
-          invoices.organizationId,
-          workspace.organizationId,
-        ),
-      ),
-    )
-    .limit(1);
+      )
+      .limit(1);
 
   if (existing) {
     revalidatePath(
       `/work-orders/${workOrderId}`,
     );
+
     return;
   }
 
-  const now = new Date();
+  const now =
+    new Date();
 
   const invoiceNumber =
     `INV-${now.getFullYear()}` +
@@ -613,20 +993,25 @@ export async function createInvoice(
       .toString()
       .slice(-6)}`;
 
-  await db.insert(invoices).values({
-    id: createId("inv"),
-    organizationId:
-      workspace.organizationId,
-    workOrderId,
-    invoiceNumber,
-    status: "unpaid",
-    subtotal: wo.subtotal,
-    discount: wo.discount,
-    total: wo.total,
-    paidAmount: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
+  await db
+    .insert(invoices)
+    .values({
+      id: createId("inv"),
+      organizationId:
+        workspace.organizationId,
+      workOrderId,
+      invoiceNumber,
+      status: "unpaid",
+      subtotal:
+        wo.subtotal,
+      discount:
+        wo.discount,
+      total:
+        wo.total,
+      paidAmount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
 
   revalidatePath(
     `/work-orders/${workOrderId}`,
@@ -636,32 +1021,47 @@ export async function createInvoice(
 export async function addPayment(
   formData: FormData,
 ) {
-  const workspace = await requireRole([
-    "owner",
-    "admin",
-  ]);
+  const workspace =
+    await requireRole([
+      "owner",
+      "admin",
+    ]);
 
   const db = getDb();
 
-  const workOrderId = String(
-    formData.get("workOrderId") ?? "",
-  );
+  const workOrderId =
+    String(
+      formData.get(
+        "workOrderId",
+      ) ?? "",
+    );
 
-  const invoiceId = String(
-    formData.get("invoiceId") ?? "",
-  );
+  const invoiceId =
+    String(
+      formData.get(
+        "invoiceId",
+      ) ?? "",
+    );
 
-  const amount = Number(
-    formData.get("amount") ?? 0,
-  );
+  const amount =
+    Number(
+      formData.get(
+        "amount",
+      ) ?? 0,
+    );
 
-  const method = String(
-    formData.get("method") ?? "cash",
-  );
+  const method =
+    String(
+      formData.get(
+        "method",
+      ) ?? "cash",
+    );
 
   const notes =
     String(
-      formData.get("notes") ?? "",
+      formData.get(
+        "notes",
+      ) ?? "",
     ).trim() || null;
 
   const allowedMethods = [
@@ -674,7 +1074,9 @@ export async function addPayment(
   if (
     !workOrderId ||
     !invoiceId ||
-    !Number.isInteger(amount) ||
+    !Number.isInteger(
+      amount,
+    ) ||
     amount <= 0 ||
     !allowedMethods.includes(
       method as (typeof allowedMethods)[number],
@@ -685,27 +1087,32 @@ export async function addPayment(
     );
   }
 
-  const [invoice] = await db
-    .select({
-      id: invoices.id,
-      total: invoices.total,
-      paidAmount: invoices.paidAmount,
-    })
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.id, invoiceId),
-        eq(
-          invoices.organizationId,
-          workspace.organizationId,
+  const [invoice] =
+    await db
+      .select({
+        id: invoices.id,
+        total: invoices.total,
+        paidAmount:
+          invoices.paidAmount,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(
+            invoices.id,
+            invoiceId,
+          ),
+          eq(
+            invoices.organizationId,
+            workspace.organizationId,
+          ),
+          eq(
+            invoices.workOrderId,
+            workOrderId,
+          ),
         ),
-        eq(
-          invoices.workOrderId,
-          workOrderId,
-        ),
-      ),
-    )
-    .limit(1);
+      )
+      .limit(1);
 
   if (!invoice) {
     throw new Error(
@@ -713,55 +1120,70 @@ export async function addPayment(
     );
   }
 
-  const remaining = Math.max(
-    0,
-    invoice.total - invoice.paidAmount,
-  );
+  const remaining =
+    Math.max(
+      0,
+      invoice.total -
+        invoice.paidAmount,
+    );
 
-  const appliedAmount = Math.min(
-    amount,
-    remaining,
-  );
+  const appliedAmount =
+    Math.min(
+      amount,
+      remaining,
+    );
 
-  if (appliedAmount <= 0) {
+  if (
+    appliedAmount <= 0
+  ) {
     throw new Error(
       "Invoice sudah lunas.",
     );
   }
 
-  const now = new Date();
+  const now =
+    new Date();
 
-  await db.insert(payments).values({
-    id: createId("pay"),
-    organizationId:
-      workspace.organizationId,
-    invoiceId,
-    amount: appliedAmount,
-    method:
-      method as (typeof allowedMethods)[number],
-    notes,
-    paidAt: now,
-    createdAt: now,
-  });
+  await db
+    .insert(payments)
+    .values({
+      id: createId("pay"),
+      organizationId:
+        workspace.organizationId,
+      invoiceId,
+      amount:
+        appliedAmount,
+      method:
+        method as (typeof allowedMethods)[number],
+      notes,
+      paidAt: now,
+      createdAt: now,
+    });
 
   const newPaidAmount =
-    invoice.paidAmount + appliedAmount;
+    invoice.paidAmount +
+    appliedAmount;
 
   const status =
-    newPaidAmount >= invoice.total
+    newPaidAmount >=
+    invoice.total
       ? "paid"
       : "partial";
 
   await db
     .update(invoices)
     .set({
-      paidAmount: newPaidAmount,
+      paidAmount:
+        newPaidAmount,
       status,
       updatedAt: now,
     })
     .where(
       and(
-        eq(invoices.id, invoiceId),
+        eq(
+          invoices.id,
+          invoiceId,
+        ),
         eq(
           invoices.organizationId,
           workspace.organizationId,
